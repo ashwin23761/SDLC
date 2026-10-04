@@ -1,33 +1,124 @@
-# Python cache/build artifacts
-__pycache__/
+# ================================
+
+# Python cache / compiled files
+
+# ================================
+
+**pycache**/
 *.py[cod]
 *$py.class
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-build/
-dist/
-*.egg-info/
+
+# ================================
 
 # Virtual environments
+
+# ================================
+
 .venv/
 .venv312/
 venv/
+env/
 
-# Local configuration/secrets
+# ================================
+
+# Python build / packaging
+
+# ================================
+
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# ================================
+
+# Local configuration / secrets
+
+# ================================
+
 .env
 .env.*
+!.env.example
+
+# Streamlit secrets
+
 .streamlit/secrets.toml
 
-# Generated app outputs and local runtime files
+# ================================
+
+# Generated app outputs / runtime
+
+# ================================
+
 outputs/*.json
 uploads/
 tmp/
 chroma_db/
 vector_store/
 
-# OS/editor noise
+# ================================
+
+# Local databases
+
+# ================================
+
+*.db
+*.sqlite
+*.sqlite3
+
+# ================================
+
+# Logs
+
+# ================================
+
+*.log
+logs/
+
+# ================================
+
+# Jupyter Notebook checkpoints
+
+# ================================
+
+.ipynb_checkpoints/
+
+# ================================
+
+# OS / editor files
+
+# ================================
+
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
+
+# ================================
+
+# Local model / ML artifacts
+
+# ================================
+
+*.gguf
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.onnx
+
+# ================================
+
+# Temporary files
+
+# ================================
+
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
