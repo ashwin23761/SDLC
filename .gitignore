@@ -1,0 +1,33 @@
+# Python cache/build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+*.egg-info/
+
+# Virtual environments
+.venv/
+.venv312/
+venv/
+
+# Local configuration/secrets
+.env
+.env.*
+.streamlit/secrets.toml
+
+# Generated app outputs and local runtime files
+outputs/*.json
+uploads/
+tmp/
+chroma_db/
+vector_store/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
