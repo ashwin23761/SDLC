@@ -17,6 +17,7 @@ from typing import List
 from crewai import Crew, Process
 
 from .agents import build_llm, build_requirements_agent, build_sdlc_agent
+from .analysis_engine import build_extended_analysis
 from .document_loader import load_source_documents
 from .models import RequirementsAnalysis, SDLCAnalysis
 from .rag import RetrievedChunk, SourceDocument, retrieve_context
@@ -36,6 +37,7 @@ class RunResult:
     reference_documents: List[str]
     uploaded_documents: List[str]
     retrieved_chunks: List[RetrievedChunk]
+    extended_analysis: dict
 
 
 def run_crew(
@@ -76,6 +78,12 @@ def run_crew(
 
     requirements_output: RequirementsAnalysis = requirements_task.output.pydantic
     sdlc_output: SDLCAnalysis = sdlc_task.output.pydantic
+    extended_analysis = build_extended_analysis(
+        scenario=scenario,
+        requirements=requirements_output,
+        sdlc=sdlc_output,
+        retrieved_chunks=retrieved_chunks,
+    )
 
     run_id = datetime.now().strftime("%Y%m%d-%H%M%S")
     result = RunResult(
@@ -88,6 +96,7 @@ def run_crew(
         reference_documents=reference_documents,
         uploaded_documents=[doc.name for doc in uploaded_documents or []],
         retrieved_chunks=retrieved_chunks,
+        extended_analysis=extended_analysis,
     )
     _save_audit_record(result)
     return result
@@ -107,6 +116,7 @@ def _save_audit_record(result: RunResult) -> None:
         "retrieved_chunks": [chunk.__dict__ for chunk in result.retrieved_chunks],
         "requirements": result.requirements.model_dump(),
         "sdlc": result.sdlc.model_dump(),
+        "extended_analysis": result.extended_analysis,
     }
     with open(path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)

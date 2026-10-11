@@ -19,6 +19,13 @@ class RequirementItem(BaseModel):
     description: str = Field(..., description="The requirement statement, phrased as 'The system shall ...'")
     priority: str = Field(..., description="High, Medium, or Low")
     reasoning: str = Field(..., description="Why this requirement exists, citing the source document/section if applicable")
+    source_stakeholder: str = Field(default="Unspecified stakeholder", description="Stakeholder or source that motivated the requirement")
+    dependencies: List[str] = Field(default_factory=list)
+    acceptance_criteria: List[str] = Field(default_factory=list)
+    applicable_regulations: List[str] = Field(default_factory=list)
+    risk_level: str = Field(default="Medium", description="High, Medium, or Low")
+    confidence_score: int = Field(default=70, ge=0, le=100)
+    approval_status: str = Field(default="Pending human approval")
 
 
 class RequirementsAnalysis(BaseModel):

@@ -5,6 +5,8 @@ Phase 1 prototype: Requirements Agent -> SDLC Agent, running locally with
 Ollama + CrewAI. See README.md for setup.
 """
 
+import json
+
 import streamlit as st
 
 from src.crew_runner import run_crew
@@ -144,6 +146,7 @@ if result:
     # ---------------- Step 1: Requirements Agent ----------------
     st.header("Step 1: Requirements Agent")
     req = result.requirements
+    extended = result.extended_analysis
 
     st.markdown(f"**Summary:** {req.summary}")
 
@@ -195,3 +198,113 @@ if result:
     st.markdown(sdlc.workflow_notes)
 
     st.info(sdlc.approval_note)
+
+    st.header("Step 3: Specialist Analysis Agents")
+    (
+        governance_tab,
+        validation_tab,
+        compliance_tab,
+        artifacts_tab,
+        traceability_tab,
+        sdlc_tab,
+        approval_tab,
+    ) = st.tabs(
+        [
+            "Input governance",
+            "Validation",
+            "Compliance & risk",
+            "Artefacts",
+            "Traceability",
+            "SDLC engine",
+            "Human approval",
+        ]
+    )
+
+    with governance_tab:
+        st.subheader("Sensitive-data handling and source control")
+        governance = extended["input_governance"]
+        if governance["masking_events"]:
+            st.dataframe(governance["masking_events"], use_container_width=True, hide_index=True)
+        else:
+            st.caption("No obvious sensitive identifiers were found in the scenario text.")
+        st.markdown(f"**Source allowlist:** {governance['source_allowlist_note']}")
+        st.markdown("**Masked scenario preview**")
+        st.code(governance["masked_scenario"], language="text")
+
+        st.subheader("Role-specific interview templates")
+        st.dataframe(extended["stakeholder_interview_templates"], use_container_width=True, hide_index=True)
+        st.subheader("Adaptive clarification questions")
+        for question in extended["clarification_questions"]:
+            st.markdown(f"- {question}")
+
+    with validation_tab:
+        st.subheader("Validated and classified requirements")
+        st.dataframe(extended["validated_requirements"], use_container_width=True, hide_index=True)
+        st.subheader("Requirement quality issues")
+        if extended["quality_issues"]:
+            st.dataframe(extended["quality_issues"], use_container_width=True, hide_index=True)
+        else:
+            st.success("No rule-based ambiguity, duplication, or testability issues were detected.")
+
+    with compliance_tab:
+        st.subheader("Compliance-control matrix")
+        st.dataframe(extended["compliance_matrix"], use_container_width=True, hide_index=True)
+        st.subheader("Security and privacy controls")
+        st.dataframe(extended["security_privacy_controls"], use_container_width=True, hide_index=True)
+        st.subheader("Risk register")
+        st.dataframe(extended["risk_register"], use_container_width=True, hide_index=True)
+
+    with artifacts_tab:
+        artifacts = extended["generated_artifacts"]
+        st.subheader("User stories")
+        st.dataframe(artifacts["user_stories"], use_container_width=True, hide_index=True)
+        st.subheader("Use cases")
+        st.dataframe(artifacts["use_cases"], use_container_width=True, hide_index=True)
+        st.subheader("Acceptance criteria")
+        st.dataframe(artifacts["acceptance_criteria"], use_container_width=True, hide_index=True)
+        st.subheader("Assumptions and dependencies")
+        st.dataframe(artifacts["assumptions_and_dependencies"], use_container_width=True, hide_index=True)
+        st.subheader("Open issues")
+        for issue in artifacts["open_issues"]:
+            st.markdown(f"- {issue}")
+
+    with traceability_tab:
+        st.subheader("Requirements Traceability Matrix")
+        st.dataframe(extended["traceability_matrix"], use_container_width=True, hide_index=True)
+        st.subheader("Evaluation metrics")
+        st.dataframe(extended["evaluation_metrics"], use_container_width=True, hide_index=True)
+
+    with sdlc_tab:
+        engine = extended["sdlc_decision_engine"]
+        st.subheader("Decision factors")
+        st.dataframe(engine["decision_factors"], use_container_width=True, hide_index=True)
+        st.subheader("Rule-based SDLC scores")
+        st.dataframe(engine["rule_scores"], use_container_width=True, hide_index=True)
+        st.subheader("Project-specific workflow")
+        st.dataframe(engine["workflow"], use_container_width=True, hide_index=True)
+
+    with approval_tab:
+        st.subheader("Human-in-the-loop approval queue")
+        edited_gates = st.data_editor(
+            extended["human_approval_gates"],
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "status": st.column_config.SelectboxColumn(
+                    "status",
+                    options=["Pending", "Approved", "Rejected", "Needs regeneration", "Pending human approval"],
+                )
+            },
+            key=f"approval_editor_{result.run_id}",
+        )
+        st.caption(
+            "This workspace demonstrates accept/reject/modify/regenerate control. "
+            "The original AI output and this edited approval queue are kept separate for auditability."
+        )
+        if st.download_button(
+            "Download approval queue JSON",
+            data=json.dumps(edited_gates, indent=2),
+            file_name=f"approval_queue_{result.run_id}.json",
+            mime="application/json",
+        ):
+            st.toast("Approval queue downloaded.")
