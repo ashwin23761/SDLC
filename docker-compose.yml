@@ -1,0 +1,37 @@
+services:
+  finance-req-agents:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "${APP_PORT:-8501}:8501"
+    environment:
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
+      FINANCE_REQ_AUTH_REQUIRED: ${FINANCE_REQ_AUTH_REQUIRED:-0}
+      FINANCE_REQ_USERS_FILE: /run/secrets/users.json
+      FINANCE_REQ_AUDIT_ENCRYPTION_KEY: ${FINANCE_REQ_AUDIT_ENCRYPTION_KEY:-}
+      CREWAI_TELEMETRY_OPT_OUT: "true"
+      OTEL_SDK_DISABLED: "true"
+    volumes:
+      - ./outputs:/app/outputs
+      - ./documents:/app/documents:ro
+      - ./secrets:/run/secrets:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s

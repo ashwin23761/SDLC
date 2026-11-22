@@ -56,7 +56,8 @@ else:
     CURRENT_ROLE = CURRENT_USER["role"]
     CURRENT_ACTOR = CURRENT_USER["username"]
 
-DEFAULT_BASE_URL = "http://localhost:11434"
+DEFAULT_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+DEFAULT_MODEL_NAME = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
 DEFAULT_SCENARIO = (
     "Loan approval module for a retail bank: customers apply online for a personal loan, "
     "the system checks eligibility and credit score, and either auto-decides or routes the "
@@ -71,7 +72,7 @@ with st.sidebar:
 
     model_name = st.text_input(
         "Ollama model",
-        value=st.session_state.get("model_name", "llama3.2:3b"),
+        value=st.session_state.get("model_name", DEFAULT_MODEL_NAME),
         help="Name of a model already pulled with `ollama pull <model>`.",
     )
     st.session_state["model_name"] = model_name

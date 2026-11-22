@@ -12,6 +12,32 @@ Uploaded documents and stakeholder notes are treated as evidence, never as runti
 
 The UI supports a scenario, stakeholder interview/meeting notes, selected knowledge-base documents, and uploads in PDF, DOCX, Markdown, text, CSV, JSON, YAML, XML, log, or HTML formats. Text-based PDF extraction requires selectable text; OCR is not included.
 
+## Run with Docker Compose
+
+Ollama stays installed and running on the Windows host; Compose starts only the Streamlit application. Pull the configured model on the host once (the default is `llama3.2:3b`):
+
+```powershell
+ollama pull llama3.2:3b
+```
+
+From the project folder, build and start the app:
+
+```powershell
+docker compose up --build
+```
+
+Open `http://localhost:8501`. To stop the container, press Ctrl+C and run `docker compose down` if it remains running. The Compose file persists run records under `outputs/`, mounts `documents/` read-only, and connects to the host Ollama service at `http://host.docker.internal:11434`.
+
+If the app reports that Ollama is unreachable, configure the host Ollama service to listen on an address reachable from Docker Desktop (commonly `OLLAMA_HOST=0.0.0.0:11434`), restart Ollama, and allow the connection through Windows Firewall. Restrict that listener with your firewall because it is reachable beyond the Windows loopback interface. To change the model or endpoint, create a `.env` file beside `docker-compose.yml`, for example:
+
+```dotenv
+OLLAMA_MODEL=llama3.2:3b
+OLLAMA_BASE_URL=http://host.docker.internal:11434
+APP_PORT=8501
+```
+
+`docker compose --build` by itself is not a complete Compose command; use `docker compose up --build` to build and start in one step.
+
 ## Implemented workflow
 
 | Problem statement capability | Implementation |

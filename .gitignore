@@ -42,6 +42,8 @@ dist/
 .env
 .env.*
 !.env.example
+secrets/*
+!secrets/.gitkeep
 
 # Streamlit secrets
 
@@ -54,6 +56,8 @@ dist/
 # ================================
 
 outputs/*.json
+outputs/*.json.enc
+outputs/*.tmp
 uploads/
 tmp/
 chroma_db/
