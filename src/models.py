@@ -26,6 +26,10 @@ class RequirementItem(BaseModel):
     risk_level: str = Field(default="Medium", description="High, Medium, or Low")
     confidence_score: int = Field(default=70, ge=0, le=100)
     approval_status: str = Field(default="Pending human approval")
+    source_references: List[str] = Field(
+        default_factory=list,
+        description="Exact source names and section/page references supporting this requirement",
+    )
 
 
 class RequirementsAnalysis(BaseModel):
@@ -61,4 +65,8 @@ class SDLCAnalysis(BaseModel):
         default="This recommendation requires sign-off from the project manager, architect, "
         "security lead, and compliance officer before adoption.",
         description="Human-in-the-loop reminder",
+    )
+    decision_factors: List[str] = Field(
+        default_factory=list,
+        description="Project characteristics used to rank the candidate SDLC models",
     )
