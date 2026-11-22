@@ -1,0 +1,18 @@
+{
+  "loan_approval_policy.md": {
+    "jurisdiction": "Unspecified; sample prototype policy",
+    "effective_date": null,
+    "version": "sample-1",
+    "applicability": "Illustrative retail loan approval requirements only; not authoritative",
+    "owner": "Unassigned; replace with approved policy owner",
+    "review_status": "Unapproved sample"
+  },
+  "kyc_aml_onboarding_standard.md": {
+    "jurisdiction": "Unspecified; sample prototype standard",
+    "effective_date": null,
+    "version": "sample-1",
+    "applicability": "Illustrative KYC/AML onboarding requirements only; not authoritative",
+    "owner": "Unassigned; replace with approved policy owner",
+    "review_status": "Unapproved sample"
+  }
+}

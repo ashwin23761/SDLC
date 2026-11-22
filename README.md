@@ -1,130 +1,95 @@
 # Finance Requirements Engineering Agents
 
-An Agentic-AI prototype for automated requirement gathering, analysis, and SDLC
-identification in the financial sector.
+A local Streamlit prototype for requirements discovery and analysis in financial software projects. The product covers a complete advisory workflow for a first use case: source intake, retrieval, requirements extraction, deterministic specialist analysis, artefact generation, SDLC recommendations, human review, and recorded evaluation feedback.
 
-The app combines two local LLM/CrewAI agents with deterministic specialist agents/checkers:
+Uploaded documents and stakeholder notes are treated as evidence, never as runtime instructions. Requirements and compliance mappings remain candidate outputs until an authorised person reviews them.
 
-1. **Requirements Agent** - extracts functional and non-functional requirements from a
-   financial scenario, selected knowledge-base files, and uploaded source documents.
-2. **SDLC Agent** - derives project characteristics and recommends ranked SDLC models.
-3. **Clarification and validation checkers** - detect missing, vague, duplicate, or
-   weakly evidenced requirements and generate adaptive follow-up questions.
-4. **Classification, compliance, security/privacy, and risk checkers** - multi-label
-   requirements and map them to controls, risks, and human approval checkpoints.
-5. **Documentation and traceability generators** - produce user stories, use cases,
-   acceptance criteria, an assumptions/dependencies register, open issues, and a
-   Requirements Traceability Matrix.
-6. **Hybrid SDLC decision engine** - combines rules with the LLM recommendation to
-   produce ranked scores and a project-specific workflow.
-7. **Human approval workspace** - lets reviewers accept, reject, or request regeneration
-   for critical outputs.
+## Run locally
 
-It runs locally with Ollama for the LLM, CrewAI for orchestration, and Streamlit for the UI.
+1. Install Ollama and pull a local model, for example `ollama pull llama3.2:3b`, then start `ollama serve`.
+2. Create and activate a virtual environment, then install dependencies with `pip install -r requirements.txt`.
+3. Run `streamlit run app.py` and open `http://localhost:8501`.
+
+The UI supports a scenario, stakeholder interview/meeting notes, selected knowledge-base documents, and uploads in PDF, DOCX, Markdown, text, CSV, JSON, YAML, XML, log, or HTML formats. Text-based PDF extraction requires selectable text; OCR is not included.
+
+## Implemented workflow
+
+| Problem statement capability | Implementation |
+|---|---|
+| Financial input and source intake | Scenario, role-labelled interview notes, selected documents, and common document/text uploads |
+| Sensitive-data handling | Configured identifier patterns are masked in scenario, knowledge-base text, and uploads before retrieval or LLM submission |
+| Retrieval-grounded generation | Local chunk retrieval with source labels, source metadata, prompt-injection-aware evidence framing, and explicit source selection |
+| Structured requirement extraction | Functional and non-functional requirements with priorities, evidence, dependencies, acceptance criteria, controls, risk, confidence, and approval state |
+| Specialist analysis | Deterministic classification, quality/conflict heuristics, candidate compliance mappings, security/privacy controls, risk and clarification queues |
+| Responsible decision review | Fairness checklist for automated eligibility/credit decisions, proxy-variable review, subgroup testing, adverse-action explainability, and human appeal |
+| Generated documentation | Draft Markdown SRS, user stories, use cases, acceptance criteria, process workflows, data/interface requirements, threats, assumptions, dependencies, and open issues |
+| Traceability | Per-requirement source candidates, control mapping, acceptance criteria, confidence, and approval status |
+| SDLC selection | LLM explanation plus deterministic ranked candidates and a workflow with phases, activities, owners, outputs, security, compliance, and validation gates |
+| Human review | Editable approval queue with approve/reject/modify/regenerate statuses, reviewer notes, modifications, and saved hash-linked audit events |
+| Evaluation | Transparent heuristic quality proxies, optional labelled JSON benchmark comparisons, processing time, reviewer satisfaction, and feedback capture |
+| Run audit | Redacted prompt, model, retrieved evidence, generated outputs, approvals, and reviewer feedback saved to a per-run record |
+| Knowledge-base metadata | `documents/manifest.json` stores jurisdiction, effective date, version, applicability, owner, and review status; missing fields are surfaced |
+
+The workflow uses two CrewAI LLM agents for requirement extraction and SDLC advice, followed by deterministic specialist analyzers in `src/analysis_engine.py`. It is an orchestrated advisory prototype, not an autonomous production multi-agent service.
+
+## Secure workspace mode
+
+The app can require password + time-based authenticator-code login, enforce role-based run/approval permissions, and encrypt run records at rest. Create a private user registry outside the repository:
+
+```powershell
+python -m src.security add-user --file C:\secrets\finance-users.json --username admin --role admin
+$env:FINANCE_REQ_USERS_FILE = 'C:\secrets\finance-users.json'
+$env:FINANCE_REQ_AUDIT_ENCRYPTION_KEY = (python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())").Trim()
+$env:FINANCE_REQ_AUTH_REQUIRED = '1'
+streamlit run app.py
+```
+
+Supported roles include `admin`, `analyst`, `business_analyst`, `approver`, `compliance`, `security`, `architect`, `project_manager`, `operations`, `auditor`, and `viewer`. Keep the registry and encryption key in a secrets manager or protected operating-system storage, and back up the encryption key separately. Secure mode stops if the user registry or encryption key is missing or invalid.
+
+## Benchmark input format
+
+Upload a labelled JSON reference in the Traceability tab. Requirement matches use approximate text similarity and must be reviewed by a domain expert.
+
+```json
+{
+  "requirements": [
+    {
+      "id": "REF-01",
+      "description": "The system shall route high-value applications to a human underwriter.",
+      "ambiguous": false,
+      "controls": ["Loan approval policy section 3.1"]
+    }
+  ],
+  "expected_sdlc": "Agile-V-Model hybrid"
+}
+```
+
+Precision, recall, F1, ambiguity confusion counts, candidate control recall, and SDLC agreement are shown only for supplied reference labels. They do not replace adjudication or a representative study.
+
+## Important implementation boundaries
+
+- This repository includes illustrative sample policies only. They are not authoritative regulations. The manifest marks their jurisdiction/effective date as unspecified and unapproved; replace them with approved, versioned sources before relying on mappings.
+- PII masking uses patterns for common identifiers. It cannot reliably detect every sensitive value; review inputs and use approved local models.
+- Similarity-based conflict detection and source matching are screening aids and can miss or over-report issues.
+- Compliance mappings are heuristic candidates and require legal/compliance sign-off. No jurisdiction-specific legal determination is made.
+- Reviewer identity and role are enforced only when secure mode is configured. In default local mode the app displays a warning and permits local use without authentication.
+- Audit encryption protects run records when configured. Source documents are processed in memory and are not persisted by the app. Retention/deletion policy is still an operator responsibility.
+- The Streamlit app does not terminate TLS itself. Put any shared or remote deployment behind an authenticated HTTPS reverse proxy; use HTTPS for non-local model endpoints.
+- User registry protection, key rotation, role lifecycle, actual regulatory updates, production monitoring, and incident response must be managed by the deployment environment. The app surfaces source currency and review actions but does not fetch changes automatically.
+- Evaluation numbers are not claimed unless a labelled benchmark or reviewer feedback is supplied. The repository does not include a representative financial-sector study or manual-baseline study.
 
 ## Project structure
 
 ```text
-finance-req-agents/
-|-- app.py                     # Streamlit UI
-|-- requirements.txt
-|-- src/
-|   |-- agents.py              # CrewAI Agent definitions
-|   |-- analysis_engine.py     # Rule-based specialist agents/checkers
-|   |-- tasks.py               # CrewAI Task definitions
-|   |-- crew_runner.py         # Orchestrates the two-agent crew
-|   |-- models.py              # Pydantic schemas
-|   |-- rag.py                 # Upload parsing, chunking, and retrieval
-|   |-- document_loader.py     # Loads built-in documents
-|   `-- ollama_client.py       # Checks local Ollama status/model availability
-|-- documents/                 # Reference/policy documents
-`-- outputs/                   # Auto-saved JSON audit records
+app.py                         Streamlit workflow and review UI
+src/crew_runner.py             Orchestration, redaction boundary, and audit persistence
+src/analysis_engine.py         Deterministic specialist analysis and generated artefacts
+src/evaluation.py              Labelled-reference comparison metrics
+src/security.py                Optional local password/MFA and role checks
+src/rag.py                     Document extraction, chunking, retrieval, source framing
+src/models.py                  Structured requirement and SDLC schemas
+src/tasks.py                   LLM task definitions
+src/document_loader.py         Knowledge-base loading and manifest metadata
+documents/manifest.json        Source governance metadata
+outputs/                       Per-run audit records
 ```
-
-## Setup
-
-1. Install Ollama and pull a small local model:
-
-   ```bash
-   ollama pull llama3.2:3b
-   ollama serve
-   ```
-
-2. Create a virtual environment and install dependencies:
-
-   ```bash
-   cd finance-req-agents
-   python -m venv .venv
-   .venv\Scripts\activate
-   pip install -r requirements.txt
-   ```
-
-3. Run the app:
-
-   ```bash
-   streamlit run app.py
-   ```
-
-   It opens at `http://localhost:8501`.
-
-## Using it
-
-1. In the sidebar, confirm Ollama is running and your selected model is available.
-2. Tick which built-in reference documents should be searchable by the Requirements Agent.
-3. Optionally upload project/evaluation sources (`.pdf`, `.md`, or `.txt`) such as the
-   problem statement or course-evaluation email text.
-4. Describe the financial functionality in the text box.
-5. Click **Run agents**. The app retrieves the most relevant chunks from selected and
-   uploaded sources, runs the Requirements Agent, passes the structured output to the
-   SDLC Agent, then runs the deterministic specialist analysis agents.
-6. Review the Step 3 tabs for input governance, validation, compliance/risk, generated
-   artefacts, traceability, SDLC scoring, and human approval controls.
-7. Each run is saved as `outputs/run_<timestamp>.json` for traceability/audit purposes.
-
-## RAG upload flow
-
-The app includes a lightweight local RAG layer in `src/rag.py`:
-
-1. Selected knowledge-base files and uploaded `.pdf`, `.md`, or `.txt` files are parsed.
-2. Documents are split into overlapping chunks with source labels.
-3. Chunks are ranked against the user's prompt using local keyword/TF-IDF-style scoring.
-4. The top chunks are injected into the Requirements Agent task as evidence.
-
-Uploaded files are treated as source material only, not as instructions to the app. This is
-important for evaluation artifacts: the problem statement and email define what the project
-should demonstrate, while the user's prompt remains the runtime request.
-
-## Adding your own reference documents
-
-Drop any `.md` or `.txt` file into `documents/`. Write real prose with section numbers
-(for example, `## 2.1 Credit bureau report`) so the Requirements Agent can cite the
-document name and section in the reasoning column.
-
-## Mapping to the problem statement
-
-| Evaluation requirement | Where it is implemented |
-|---|---|
-| Multi-agent architecture and central orchestration | `src/crew_runner.py` runs CrewAI agents, then specialist agents in `src/analysis_engine.py` |
-| Stakeholder/source inputs | Streamlit scenario box, selected knowledge-base files, and upload controls in `app.py` |
-| Retrieval-grounded generation | `src/rag.py` chunks and ranks selected/uploaded sources and frames them as evidence only |
-| Sensitive-data handling | `analysis_engine.mask_sensitive_data` masks common email, phone, card-like, Aadhaar-like, and tax-ID patterns |
-| Requirement extraction | `src/tasks.py::build_requirements_task` -> `RequirementsAnalysis` |
-| Requirement structure | `src/models.py::RequirementItem` includes ID, statement, category, source, priority, dependencies, acceptance criteria, regulations, risk, confidence, and approval status |
-| Classification | `analysis_engine._enrich_requirement` assigns business, functional, security, privacy, regulatory, performance, availability, auditability, integration, and operations labels |
-| Ambiguity/incompleteness/duplication/testability checks | `analysis_engine._quality_issues` and the Validation tab |
-| Compliance and security analysis | `analysis_engine._compliance_matrix`, `_security_privacy_controls`, and `_risk_register` |
-| Generated artefacts | Step 3 Artefacts tab: user stories, use cases, acceptance criteria, assumptions/dependencies, open issues |
-| Traceability | Step 3 Traceability tab and JSON audit record |
-| SDLC decision factors and ranked recommendations | CrewAI SDLC task plus `analysis_engine._score_sdlc` |
-| Project-specific SDLC workflow | Step 3 SDLC engine tab |
-| Human-in-the-loop approval | Step 3 Human approval tab with editable accept/reject/regenerate statuses |
-| Audit trail | `outputs/run_<timestamp>.json` stores prompts, sources, retrieved chunks, requirements, SDLC result, specialist analysis, and approval queue seed |
-
-## Notes / known limitations
-
-- Structured output quality depends on the local model. `llama3.2:3b` is fast but can be
-  inconsistent with strict JSON; if parsing fails, try `llama3.1:8b` or `qwen2.5:7b`.
-- Compliance mappings are prototype controls, not legal determinations. The UI explicitly
-  routes high-impact interpretations to authorised humans.
-- Retrieval is intentionally lightweight and local. It can be upgraded to embeddings or a
-  vector database while keeping the same source-document interface.

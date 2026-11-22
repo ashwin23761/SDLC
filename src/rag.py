@@ -12,8 +12,9 @@ from __future__ import annotations
 import io
 import math
 import re
+from html.parser import HTMLParser
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Iterable, List
 
 
@@ -24,6 +25,7 @@ class SourceDocument:
     name: str
     text: str
     source_type: str = "reference"
+    metadata: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -35,6 +37,7 @@ class RetrievedChunk:
     chunk_index: int
     score: float
     text: str
+    metadata: dict = field(default_factory=dict)
 
 
 TOKEN_RE = re.compile(r"[a-zA-Z][a-zA-Z0-9_-]{2,}")
@@ -45,9 +48,35 @@ def extract_text_from_upload(filename: str, data: bytes) -> str:
     lower_name = filename.lower()
     if lower_name.endswith(".pdf"):
         return _extract_pdf_text(data)
-    if lower_name.endswith((".md", ".txt")):
-        return _decode_text(data)
-    raise ValueError(f"Unsupported upload type for {filename}. Use PDF, MD, or TXT.")
+    if lower_name.endswith(".docx"):
+        try:
+            from docx import Document
+        except ImportError as exc:  # pragma: no cover - dependency installation
+            raise RuntimeError("DOCX upload support requires python-docx. Run `pip install python-docx`.") from exc
+        document = Document(io.BytesIO(data))
+        return "\n".join(paragraph.text for paragraph in document.paragraphs if paragraph.text.strip())
+    if lower_name.endswith((".md", ".txt", ".csv", ".json", ".yaml", ".yml", ".xml", ".log", ".html", ".htm")):
+        text = _decode_text(data)
+        if lower_name.endswith((".html", ".htm")):
+            return _strip_html(text)
+        return text
+    raise ValueError(f"Unsupported upload type for {filename}. Use PDF, DOCX, MD, TXT, CSV, JSON, YAML, XML, LOG, or HTML.")
+
+
+class _HTMLTextExtractor(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.parts = []
+
+    def handle_data(self, data):
+        if data.strip():
+            self.parts.append(data.strip())
+
+
+def _strip_html(text: str) -> str:
+    parser = _HTMLTextExtractor()
+    parser.feed(text)
+    return "\n".join(parser.parts)
 
 
 def retrieve_context(
@@ -72,6 +101,7 @@ def retrieve_context(
                     chunk_index=index,
                     score=0.0,
                     text=text,
+                    metadata=doc.metadata,
                 )
             )
 
@@ -86,9 +116,15 @@ def retrieve_context(
         "requirement."
     ]
     for chunk in selected:
+        metadata = chunk.metadata or {}
+        metadata_text = "; ".join(
+            f"{key}={metadata.get(key)}"
+            for key in ("jurisdiction", "effective_date", "version", "applicability", "owner", "review_status")
+            if metadata.get(key)
+        ) or "source metadata unavailable"
         blocks.append(
             f"--- START SOURCE: {chunk.source_name} | type={chunk.source_type} | "
-            f"chunk={chunk.chunk_index} | score={chunk.score:.3f} ---\n"
+            f"chunk={chunk.chunk_index} | score={chunk.score:.3f} | metadata={metadata_text} ---\n"
             f"{chunk.text.strip()}\n"
             f"--- END SOURCE: {chunk.source_name} | chunk={chunk.chunk_index} ---"
         )
