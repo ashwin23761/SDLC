@@ -3,12 +3,12 @@ Structured data models for the Finance Requirements Engineering Agents.
 
 These Pydantic models are passed to CrewAI as `output_pydantic` schemas so
 that each agent is forced to return clean, structured JSON instead of free
-text. That structured output is what lets the Streamlit UI render tables
-and lets Step 2 (the SDLC agent) reliably consume Step 1's output.
+text. Structured outputs let the Streamlit UI render results and let later
+agents reliably consume earlier workflow outputs.
 """
 
-from typing import List
-from pydantic import BaseModel, Field
+from typing import List, Literal
+from pydantic import BaseModel, Field, model_validator
 
 
 class RequirementItem(BaseModel):
@@ -41,6 +41,60 @@ class RequirementsAnalysis(BaseModel):
     assumptions: List[str] = Field(default_factory=list)
 
 
+class ClarificationQuestion(BaseModel):
+    """A stakeholder question generated to resolve an open requirement issue."""
+
+    question: str
+    reason: str
+    related_requirement_ids: List[str] = Field(default_factory=list)
+    priority: Literal["High", "Medium", "Low"] = "Medium"
+
+
+class ClarificationAnalysis(BaseModel):
+    """Reviewable questions raised by the Clarification Agent."""
+
+    summary: str
+    questions: List[ClarificationQuestion] = Field(default_factory=list)
+
+
+class ValidationFinding(BaseModel):
+    """One evidence-based issue found while reviewing candidate requirements."""
+
+    requirement_id: str = Field(
+        description="Requirement ID, or 'General' for a cross-requirement finding"
+    )
+    issue_type: Literal[
+        "ambiguity",
+        "incomplete",
+        "inconsistent",
+        "duplicate",
+        "not_testable",
+        "source_traceability",
+        "other",
+    ]
+    severity: Literal["High", "Medium", "Low"]
+    description: str
+    evidence: str = Field(
+        description="Requirement text or source evidence supporting the finding"
+    )
+    recommended_action: str
+
+
+class RequirementsValidation(BaseModel):
+    """AI-assisted validation results; findings require human review."""
+
+    status: Literal["pass", "needs_review"]
+    summary: str
+    reviewed_requirement_ids: List[str] = Field(default_factory=list)
+    findings: List[ValidationFinding] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def require_review_for_findings(self):
+        if self.findings:
+            self.status = "needs_review"
+        return self
+
+
 class SDLCRecommendation(BaseModel):
     """One ranked SDLC candidate."""
 
@@ -50,7 +104,7 @@ class SDLCRecommendation(BaseModel):
 
 
 class SDLCAnalysis(BaseModel):
-    """Full output of the SDLC Agent (Step 2)."""
+    """Full output of the SDLC Selection Agent."""
 
     project_characteristics: List[str] = Field(
         default_factory=list,

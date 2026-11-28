@@ -1,13 +1,12 @@
 """
-Agent definitions for Phase 1: Requirements Agent -> SDLC Agent.
+CrewAI agent definitions for the requirements-analysis workflow.
 
 This is a deliberately small slice of the full multi-agent architecture in
 the problem statement (Coordinator, Stakeholder-interaction, Extraction,
 Clarification, Classification, Conflict-detection, Compliance, Security,
 Risk, SDLC-selection, Documentation, Validation, Human-approval agents).
-For the midsem checkpoint we implement exactly the two agents the
-evaluation asks for, but the code is structured so more agents/tasks can
-be added later without restructuring the project.
+The active LLM workflow implements requirements, clarification, validation,
+and SDLC selection agents; deterministic specialists handle additional checks.
 """
 
 from crewai import Agent, LLM
@@ -36,6 +35,44 @@ def build_requirements_agent(llm: LLM) -> Agent:
             "a requirement is driven by a policy or KYC/AML rule you cite the document and section it came "
             "from. You always separate functional requirements (what the system must do) from "
             "non-functional requirements (security, availability, compliance, auditability, performance)."
+        ),
+        llm=llm,
+        verbose=True,
+        allow_delegation=False,
+    )
+
+
+def build_clarification_agent(llm: LLM) -> Agent:
+    return Agent(
+        role="Financial Requirements Clarification Analyst",
+        goal=(
+            "Review the scenario, extracted requirements, and supplied evidence to identify material "
+            "ambiguities, missing decisions, and unresolved stakeholder questions."
+        ),
+        backstory=(
+            "You are a senior requirements interviewer for financial systems. Ask concise, answerable "
+            "questions that resolve scope, business-rule, exception, data, integration, security, "
+            "compliance, performance, or availability uncertainty. Do not ask for information already "
+            "provided, invent policy, or answer questions on behalf of stakeholders."
+        ),
+        llm=llm,
+        verbose=True,
+        allow_delegation=False,
+    )
+
+
+def build_validation_agent(llm: LLM) -> Agent:
+    return Agent(
+        role="Financial Requirements Validation Analyst",
+        goal=(
+            "Check candidate requirements for completeness, clarity, testability, internal consistency, "
+            "duplication, and traceability to the supplied scenario and source evidence."
+        ),
+        backstory=(
+            "You are an independent requirements quality reviewer for regulated financial software. "
+            "Report concrete findings with requirement IDs and supporting evidence. Treat missing "
+            "evidence as unverified, not as proof that a requirement is false. Do not rewrite or approve "
+            "requirements, make legal determinations, or treat AI output as a human-approved baseline."
         ),
         llm=llm,
         verbose=True,

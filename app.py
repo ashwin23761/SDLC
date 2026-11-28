@@ -1,8 +1,8 @@
 """
 Finance Requirements Engineering Agents - Streamlit UI
 
-Phase 1 prototype: Requirements Agent -> SDLC Agent, running locally with
-Ollama + CrewAI. See README.md for setup.
+Requirements, clarification, validation, and SDLC workflow, running locally
+with Ollama + CrewAI. See README.md for setup.
 """
 
 import json
@@ -10,7 +10,17 @@ import os
 
 import streamlit as st
 
-from src.crew_runner import run_crew, save_approval_changes, load_audit_record, save_evaluation_feedback
+from src.crew_runner import (
+    delete_run_history_item,
+    list_run_history,
+    load_audit_record,
+    load_run_result,
+    run_crew,
+    save_approval_changes,
+    save_evaluation_feedback,
+    sync_local_history_to_mongo,
+)
+from src.db import check_mongo_connection, get_mongo_config
 from src.evaluation import evaluate_against_reference
 from src.document_loader import list_documents
 from src.ollama_client import check_ollama
@@ -141,18 +151,194 @@ with st.sidebar:
         help="Higher values give the agent more source context, but very small local models may become less consistent.",
     )
 
+    st.divider()
+    st.header("Database (MongoDB)")
+    mongo_cfg = get_mongo_config()
+    mongo_connected, mongo_info = check_mongo_connection()
+    if mongo_connected:
+        st.success(f"MongoDB connected (`{mongo_info}`).")
+        if st.button("Sync local outputs/ to MongoDB", use_container_width=True):
+            sync_result = sync_local_history_to_mongo()
+            st.session_state["mongo_sync_notice"] = (
+                f"Synced {sync_result['synced']} run(s) to MongoDB "
+                f"({sync_result['skipped']} already present)."
+            )
+            if sync_result["errors"]:
+                st.warning("Some files could not be synced: " + "; ".join(sync_result["errors"]))
+        if st.session_state.get("mongo_sync_notice"):
+            st.caption(st.session_state["mongo_sync_notice"])
+    else:
+        st.warning(
+            f"MongoDB unreachable at `{mongo_cfg['uri']}`. "
+            "Falling back to local `outputs/` JSON files."
+        )
+
+    history_summaries, history_backend, auto_sync_stats = list_run_history(limit=100)
+    if auto_sync_stats.get("synced", 0) > 0:
+        st.caption(f"Imported {auto_sync_stats['synced']} existing local run(s) into MongoDB.")
+
+    if history_summaries:
+        st.subheader(f"Recent runs ({len(history_summaries)})")
+        summary_by_id = {item["run_id"]: item for item in history_summaries}
+        quick_run_id = st.selectbox(
+            "Load a past run",
+            options=[item["run_id"] for item in history_summaries],
+            format_func=lambda rid: (
+                f"{rid} | {summary_by_id[rid]['model_name']} | "
+                f"{summary_by_id[rid]['scenario_preview'][:42]}"
+            ),
+            key="sidebar_quick_run_id",
+        )
+        if st.button("Open selected run", use_container_width=True, key="sidebar_open_run"):
+            try:
+                st.session_state["last_result"] = load_run_result(quick_run_id)
+                st.session_state["pending_nav_mode"] = "New / Active Analysis"
+                st.rerun()
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"Could not load run {quick_run_id}: {exc}")
+    else:
+        st.caption("No past runs recorded yet.")
+
 # ---------------------------------------------------------------------------
 # Main area
 # ---------------------------------------------------------------------------
 st.title("Finance Requirements Engineering Agents")
-st.caption("Phase 1: Requirements Agent -> SDLC Agent, running locally with Ollama + CrewAI")
+st.caption("Requirements -> Clarification -> Validation -> SDLC, running locally with Ollama + CrewAI")
 if AUTH_REQUIRED:
     st.caption(f"Signed in as {CURRENT_ACTOR} ({CURRENT_ROLE}).")
     if st.button("Sign out"):
         st.session_state.pop("authenticated_user", None)
         st.rerun()
-else:
-    st.warning("Local prototype mode: authentication/MFA is disabled. Enable secure mode before shared or remote use.")
+
+if "pending_nav_mode" in st.session_state:
+    st.session_state["nav_mode"] = st.session_state.pop("pending_nav_mode")
+if "nav_mode" not in st.session_state:
+    st.session_state["nav_mode"] = "New / Active Analysis"
+
+nav_mode = st.radio(
+    "View",
+    ["New / Active Analysis", "Run History"],
+    horizontal=True,
+    key="nav_mode",
+    label_visibility="collapsed",
+)
+
+if nav_mode == "Run History":
+    st.header("Run History")
+    backend_label = f"MongoDB (`{mongo_info}`)" if history_backend == "mongodb" else "Local `outputs/` files (MongoDB fallback)"
+    st.caption(f"Storage backend: {backend_label}")
+
+    if not history_summaries:
+        st.info("No runs found yet. Run the agents from the New / Active Analysis view to create your first run.")
+        st.stop()
+
+    total_reqs = sum(item["functional_count"] + item["non_functional_count"] for item in history_summaries)
+    unique_models = sorted({item["model_name"] for item in history_summaries if item.get("model_name")})
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Stored runs", len(history_summaries))
+    m2.metric("Models used", len(unique_models))
+    m3.metric("Total requirements", total_reqs)
+    m4.metric("Latest run", history_summaries[0]["run_id"])
+
+    filter_col1, filter_col2 = st.columns([3, 1])
+    with filter_col1:
+        history_search = st.text_input(
+            "Search run history",
+            placeholder="Filter by scenario text, run ID, SDLC approach, actor, or document name...",
+            key="history_search_query",
+        )
+    with filter_col2:
+        history_model_filter = st.selectbox(
+            "Model",
+            options=["All"] + unique_models,
+            key="history_model_filter",
+        )
+
+    filtered_history, _, _ = list_run_history(
+        limit=100,
+        search_query=history_search,
+        model_filter=history_model_filter,
+        auto_sync_local=False,
+    )
+
+    if not filtered_history:
+        st.warning("No runs match the current search or model filter.")
+        st.stop()
+
+    table_rows = [
+        {
+            "run_id": item["run_id"],
+            "created_at": item["created_at"],
+            "model": item["model_name"],
+            "duration_s": round(item["duration_seconds"], 1),
+            "FR": item["functional_count"],
+            "NFR": item["non_functional_count"],
+            "recommended_sdlc": item["recommended_approach"] or "-",
+            "audit_events": item["approval_events_count"],
+            "created_by": item["created_by"],
+            "scenario": item["scenario_preview"],
+        }
+        for item in filtered_history
+    ]
+    st.dataframe(table_rows, use_container_width=True, hide_index=True)
+
+    st.subheader("Inspect or load a past run")
+    filtered_by_id = {item["run_id"]: item for item in filtered_history}
+    selected_history_id = st.selectbox(
+        "Select run ID",
+        options=[item["run_id"] for item in filtered_history],
+        format_func=lambda rid: (
+            f"{rid} — {filtered_by_id[rid]['created_at']} — "
+            f"{filtered_by_id[rid]['model_name']} — {filtered_by_id[rid]['scenario_preview'][:70]}"
+        ),
+        key="history_selected_run_id",
+    )
+    selected_meta = filtered_by_id[selected_history_id]
+
+    action_col1, action_col2, action_col3 = st.columns([2, 2, 3])
+    with action_col1:
+        if st.button("Open full analysis", type="primary", use_container_width=True, key="history_open_full"):
+            try:
+                st.session_state["last_result"] = load_run_result(selected_history_id)
+                st.session_state["pending_nav_mode"] = "New / Active Analysis"
+                st.rerun()
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"Could not load run {selected_history_id}: {exc}")
+    with action_col2:
+        confirm_delete = st.checkbox("Confirm delete", key=f"confirm_del_{selected_history_id}")
+    with action_col3:
+        delete_allowed = (not AUTH_REQUIRED or can_run(CURRENT_ROLE)) and confirm_delete
+        if st.button("Delete selected run", disabled=not delete_allowed, use_container_width=True, key="history_delete_btn"):
+            deleted = delete_run_history_item(selected_history_id)
+            if st.session_state.get("last_result") and st.session_state["last_result"].run_id == selected_history_id:
+                st.session_state["last_result"] = None
+            st.success(
+                f"Deleted run {selected_history_id} "
+                f"(MongoDB: {deleted['mongodb']}, file: {deleted['file']})."
+            )
+            st.rerun()
+
+    with st.expander("Quick preview of selected run", expanded=True):
+        st.markdown(f"**Run ID:** `{selected_meta['run_id']}` | **Created:** `{selected_meta['created_at']}` | **Actor:** `{selected_meta['created_by']}`")
+        st.markdown(f"**Scenario:** {selected_meta['scenario']}")
+        st.markdown(
+            f"**Model:** `{selected_meta['model_name']}` | **Duration:** `{selected_meta['duration_seconds']:.1f} s` | "
+            f"**FR/NFR:** `{selected_meta['functional_count']}/{selected_meta['non_functional_count']}` | "
+            f"**SDLC:** `{selected_meta['recommended_approach'] or 'N/A'}`"
+        )
+        if selected_meta["reference_documents"]:
+            st.markdown(f"**Reference documents:** {', '.join(selected_meta['reference_documents'])}")
+        if selected_meta["uploaded_documents"]:
+            st.markdown(f"**Uploaded documents:** {', '.join(selected_meta['uploaded_documents'])}")
+        try:
+            preview_record = load_audit_record(selected_history_id)
+            reqs_obj = preview_record.get("requirements") or {}
+            st.markdown(f"**Summary:** {reqs_obj.get('summary', '')}")
+            if preview_record.get("approval_history"):
+                st.caption(f"Recorded audit/approval events: {len(preview_record['approval_history'])}")
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"Could not read run preview: {exc}")
+    st.stop()
 
 scenario = st.text_area(
     "Describe the finance functionality",
@@ -200,9 +386,22 @@ result = st.session_state.get("last_result")
 
 if result:
     st.divider()
+    if getattr(result, "storage_info", {}).get("loaded_from_history"):
+        hist_col1, hist_col2 = st.columns([5, 1])
+        with hist_col1:
+            st.info(
+                f"Viewing historical run `{result.run_id}` "
+                f"(created `{result.created_at or 'previously'}` by `{getattr(result, 'created_by', 'unknown')}`)."
+            )
+        with hist_col2:
+            if st.button("Clear loaded run", use_container_width=True):
+                st.session_state["last_result"] = None
+                st.rerun()
+
+    mongo_note = f"MongoDB (`{mongo_info}`) and " if (mongo_connected or getattr(result, "storage_info", {}).get("mongodb_saved")) else ""
     st.caption(
         f"Run {result.run_id} with `{result.model_name}` took {result.duration_seconds:.1f} s. "
-        f"Saved to `outputs/run_{result.run_id}.json{'.enc' if os.getenv('FINANCE_REQ_AUDIT_ENCRYPTION_KEY') else ''}`."
+        f"Saved to {mongo_note}`outputs/run_{result.run_id}.json{'.enc' if os.getenv('FINANCE_REQ_AUDIT_ENCRYPTION_KEY') else ''}`."
     )
     if result.uploaded_documents:
         st.caption(f"Uploaded sources: {', '.join(result.uploaded_documents)}")
@@ -258,8 +457,8 @@ if result:
     else:
         st.caption("None stated.")
 
-    # ---------------- Step 2: SDLC Agent ----------------
-    st.header("Step 2: SDLC Agent")
+    # ---------------- Step 4: SDLC Selection Agent ----------------
+    st.header("Step 4: SDLC Selection Agent")
     sdlc = result.sdlc
 
     st.subheader("Project characteristics")
@@ -280,7 +479,7 @@ if result:
 
     st.info(sdlc.approval_note)
 
-    st.header("Step 3: Specialist Analysis Agents")
+    st.header("Specialist Analysis")
     (
         governance_tab,
         validation_tab,
@@ -318,13 +517,37 @@ if result:
 
         st.subheader("Role-specific interview templates")
         st.dataframe(extended["stakeholder_interview_templates"], use_container_width=True, hide_index=True)
-        st.subheader("Adaptive clarification questions")
+        clarification_review = extended.get("clarification_agent")
+        st.subheader("Clarification Agent questions")
+        if clarification_review:
+            st.caption(clarification_review.get("summary", ""))
+            questions = clarification_review.get("questions", [])
+            if questions:
+                st.dataframe(questions, use_container_width=True, hide_index=True)
+            else:
+                st.success("The Clarification Agent found no material unanswered questions.")
+        st.caption("Answer these with the relevant stakeholder, then include the answers in the notes and rerun the analysis.")
+        st.subheader("Rule-based clarification prompts")
         for question in extended["clarification_questions"]:
             st.markdown(f"- {question}")
 
     with validation_tab:
-        st.subheader("Validated and classified requirements")
+        st.subheader("Classified candidate requirements")
         st.dataframe(extended["validated_requirements"], use_container_width=True, hide_index=True)
+        validation_review = extended.get("validation_agent")
+        if validation_review:
+            st.subheader("Validation Agent review")
+            st.caption(validation_review.get("summary", ""))
+            if validation_review.get("status") != "pass" or validation_review.get("findings"):
+                st.warning("The Validation Agent found items that need human review.")
+            else:
+                st.success("The Validation Agent found no material issues; human approval is still required.")
+            findings = validation_review.get("findings", [])
+            if findings:
+                st.dataframe(findings, use_container_width=True, hide_index=True)
+            st.caption(
+                f"Requirements reviewed: {', '.join(validation_review.get('reviewed_requirement_ids', [])) or 'None reported'}"
+            )
         st.subheader("Requirement quality issues")
         if extended["quality_issues"]:
             st.dataframe(extended["quality_issues"], use_container_width=True, hide_index=True)
@@ -349,7 +572,7 @@ if result:
         st.download_button("Download SRS (Markdown)", artifacts["srs"], file_name=f"srs_{result.run_id}.md", mime="text/markdown")
         st.download_button(
             "Download all generated artefacts (JSON)",
-            data=json.dumps({"requirements": req.model_dump(), "sdlc": sdlc.model_dump(), "artefacts": artifacts, "traceability": extended["traceability_matrix"], "compliance_matrix": extended["compliance_matrix"], "fairness_review": extended["fairness_review"], "regulatory_change_controls": extended["regulatory_change_controls"], "risks": extended["risk_register"]}, indent=2, ensure_ascii=False),
+            data=json.dumps({"requirements": req.model_dump(), "clarification_agent": extended.get("clarification_agent"), "validation_agent": extended.get("validation_agent"), "sdlc": sdlc.model_dump(), "artefacts": artifacts, "traceability": extended["traceability_matrix"], "compliance_matrix": extended["compliance_matrix"], "fairness_review": extended["fairness_review"], "regulatory_change_controls": extended["regulatory_change_controls"], "risks": extended["risk_register"]}, indent=2, ensure_ascii=False),
             file_name=f"requirements_package_{result.run_id}.json",
             mime="application/json",
         )

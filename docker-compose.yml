@@ -1,4 +1,18 @@
 services:
+  mongo:
+    image: mongo:7
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    volumes:
+      - mongo_data:/data/db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   finance-req-agents:
     build:
       context: .
@@ -8,11 +22,18 @@ services:
     environment:
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
+      MONGODB_URI: ${MONGODB_URI:-mongodb://mongo:27017}
+      MONGODB_DB_NAME: ${MONGODB_DB_NAME:-finance_req_agents}
+      MONGODB_COLLECTION: ${MONGODB_COLLECTION:-runs}
+      FINANCE_REQ_MONGODB_ENABLED: ${FINANCE_REQ_MONGODB_ENABLED:-1}
       FINANCE_REQ_AUTH_REQUIRED: ${FINANCE_REQ_AUTH_REQUIRED:-0}
       FINANCE_REQ_USERS_FILE: /run/secrets/users.json
       FINANCE_REQ_AUDIT_ENCRYPTION_KEY: ${FINANCE_REQ_AUDIT_ENCRYPTION_KEY:-}
       CREWAI_TELEMETRY_OPT_OUT: "true"
       OTEL_SDK_DISABLED: "true"
+    depends_on:
+      mongo:
+        condition: service_healthy
     volumes:
       - ./outputs:/app/outputs
       - ./documents:/app/documents:ro
@@ -35,3 +56,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
+
+volumes:
+  mongo_data:

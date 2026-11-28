@@ -7,8 +7,9 @@ Uploaded documents and stakeholder notes are treated as evidence, never as runti
 ## Run locally
 
 1. Install Ollama and pull a local model, for example `ollama pull llama3.2:3b`, then start `ollama serve`.
-2. Create and activate a virtual environment, then install dependencies with `pip install -r requirements.txt`.
-3. Run `streamlit run app.py` and open `http://localhost:8501`.
+2. Start a local MongoDB instance (default `mongodb://localhost:27017`) or set `MONGODB_URI`, `MONGODB_DB_NAME`, and `MONGODB_COLLECTION`. If MongoDB is not running, the app falls back to reading and writing local JSON files in `outputs/`.
+3. Create and activate a virtual environment, then install dependencies with `pip install -r requirements.txt`.
+4. Run `streamlit run app.py` and open `http://localhost:8501`. Existing `outputs/run_*.json` files are imported into MongoDB automatically on startup (or via the sidebar sync button).
 
 The UI supports a scenario, stakeholder interview/meeting notes, selected knowledge-base documents, and uploads in PDF, DOCX, Markdown, text, CSV, JSON, YAML, XML, log, or HTML formats. Text-based PDF extraction requires selectable text; OCR is not included.
 
@@ -26,7 +27,7 @@ From the project folder, build and start the app:
 docker compose up --build
 ```
 
-Open `http://localhost:8501`. To stop the container, press Ctrl+C and run `docker compose down` if it remains running. The Compose file persists run records under `outputs/`, mounts `documents/` read-only, and connects to the host Ollama service at `http://host.docker.internal:11434`.
+Open `http://localhost:8501`. To stop the container, press Ctrl+C and run `docker compose down` if it remains running. The Compose file starts both the Streamlit app and a `mongo` (`mongo:7`) database container, persists MongoDB data in the `mongo_data` volume, keeps per-run audit JSON backups under `outputs/`, mounts `documents/` read-only, and connects to the host Ollama service at `http://host.docker.internal:11434`.
 
 If the app reports that Ollama is unreachable, configure the host Ollama service to listen on an address reachable from Docker Desktop (commonly `OLLAMA_HOST=0.0.0.0:11434`), restart Ollama, and allow the connection through Windows Firewall. Restrict that listener with your firewall because it is reachable beyond the Windows loopback interface. To change the model or endpoint, create a `.env` file beside `docker-compose.yml`, for example:
 
@@ -56,7 +57,7 @@ APP_PORT=8501
 | Run audit | Redacted prompt, model, retrieved evidence, generated outputs, approvals, and reviewer feedback saved to a per-run record |
 | Knowledge-base metadata | `documents/manifest.json` stores jurisdiction, effective date, version, applicability, owner, and review status; missing fields are surfaced |
 
-The workflow uses two CrewAI LLM agents for requirement extraction and SDLC advice, followed by deterministic specialist analyzers in `src/analysis_engine.py`. It is an orchestrated advisory prototype, not an autonomous production multi-agent service.
+The workflow uses four sequential CrewAI LLM agents: requirement extraction, clarification-question generation, requirements validation, and SDLC advice. Clarification questions and validation findings are advisory outputs for stakeholder review; they do not block a run or approve requirements. Deterministic specialist analyzers in `src/analysis_engine.py` provide additional checks and artefacts. This is an orchestrated advisory prototype, not an autonomous production multi-agent service.
 
 ## Secure workspace mode
 
@@ -107,7 +108,8 @@ Precision, recall, F1, ambiguity confusion counts, candidate control recall, and
 ## Project structure
 
 ```text
-app.py                         Streamlit workflow and review UI
+app.py                         Streamlit workflow, run history browser, and review UI
+src/db.py                      MongoDB persistence, encryption-at-rest wrapper, and history queries
 src/crew_runner.py             Orchestration, redaction boundary, and audit persistence
 src/analysis_engine.py         Deterministic specialist analysis and generated artefacts
 src/evaluation.py              Labelled-reference comparison metrics

@@ -1,12 +1,10 @@
 """
-Deterministic specialist agents/checkers used around the LLM crew.
+Deterministic specialist checks and artefact generation around the LLM crew.
 
-The PDF problem statement calls for a broad multi-agent platform. Running a
-large number of LLM agents locally would be slow and brittle for a classroom
-prototype, so these helpers implement the repeatable parts as rule-based
-specialists: clarification, classification, quality validation, compliance,
-security/privacy, risk, documentation, traceability, SDLC scoring, and human
-approval routing.
+These helpers complement the LLM clarification and validation agents with
+repeatable classification, quality heuristics, compliance candidates,
+security/privacy and risk checks, traceability, SDLC scoring, and approval
+routing.
 """
 
 from __future__ import annotations
